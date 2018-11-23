@@ -1,0 +1,185 @@
+## Helpful Talks
+
+- [Modern CMake for modular design](https://www.youtube.com/watch?v=ztrnb-bVVPo) - Mathieu Ropert @ Meeting C++ 2017
+    - Circular dependency = bad
+    - Use CMake to prevent nonsensical dependencies/architecture design at the modular level
+    - Suggestions:
+        - Define the module build flags (25:00)
+        - Define module dependencies
+        - Modules set private flags (req to build, no propogation)
+        - No implicit dependencies (if making the module and could possibly be making an implicit export, *make it private*).
+        - **Encapsulate build flags at module level**
+    - Modern CMake:
+        - 30 minute mark (all of the no-no's and best practices)
+        - Declare module with add_library() or add_executable()
+        - Declare build flags with target_xxx()
+        - Declare dependencies with target_link_libraries()
+        - Specify Public/Private
+    - External projects:
+        - 41 minute mark
+        - External packages = regular targets!
+        - Has built-in finders! (TODO: find list of these)
+        - Create Finder:
+            - 46 minute mark
+            - Bother maintainers?
+            - CMake can build one automatically upon build of module
+            - Making one isn't hard (isn't in talk)
+    - Suggested Talks:
+        - Daniel Pfeifer - Effective CMake @ C++Now 2017
+        - Advanced Levelization techniques @ CppCon 2016
+
+- [Advanced Levelization Techniques](https://www.youtube.com/watch?v=QjFpKJ8Xx78) - John Lakos @ CppCon 2016
+    - Part 1: Review of Elementary Physical Design
+        - Logical: Classes/functions
+        - Physical: Files/libraries
+        - Component: Uniform Physical Structure
+            - component.h - header file
+            - component.cpp - implementation file
+            - component.t.cpp - test driver
+        - ***Fundamental unit of design***
+        - Not just .h/.cpp pair, rather...
+        - **Defining a component**: four properties (for semantic standards/ease of code-reading)
+            - .cpp includes .h as first substantive line of code
+                - .h file needs to compile *in isolation*
+                - No compile order dependencies!
+                - **Even if the .cpp file is empty**
+            - All constructs (tokens/symbols/etc.) that have *external linkage* (i.e. can be looked at/used by other "translation units") that are *defined* in a .cpp file must be *declared* in the corresponding .h file
+                - TODO: look more into translation units
+                - Prevent ABI leaking
+            - All constructs having external/dual *bindage* declared in the .h file (if defined \[declared?\] at all) are defined within the component
+                - Bindage: handling of *binding* the declaration to its corresponding definition (internal binding) or external declaration (i.e. things handled with 'extern', a.k.a. external binding)
+                    - Internal bindage: compiler
+                    - External bindage: linker
+                    - Dual bindage: when there's both internal and external binding happening. Compiler *and* linker
+                        - Inline functions
+                        - Templates
+                - **ELI5:** if there's even a chance that the linker is going to touch a declaration in a .h file, define it in the component (.cpp)
+            - ALWAYS use `#include`. NOT forward declaration (`extern`)
+                - Allows to extract component dependencies efficiently.
+        - Logical relationships between components
+            - Diagram representation
+                - Component - oval (logical) inside of a rectangle (physical)
+                - Ends generally go from oval to oval
+                - "X **is a** Y"
+                    - Medium line, solid arrow pointing from X-oval to Y-oval
+                - "X uses Y **in its interface**"
+                    - Thin line going from Y-oval to a hollow circle that tangentially touches X-oval
+                - "X uses Y **in its implementation**"
+                    - Thin line going from Y-oval to a solid circle that tangentially touches X-oval
+                - "X uses Y **in name only**" - It is possible for X to do everything it otherwise would if it were isolated from Y. Nowhere in its declarations/definitions does it (or any of its dependents) *need* Y as a whole component.
+                    - Dashed line going from Y-oval to a hollow circle that is tangentially touching X-oval
+                - "X **depends on** Y"
+                    - Thiccc line with thiccc arrow from X-box pointing to Y-box
+                    - "is a", "in its interface", "it its implementation" = 100% will need this as well
+            - Semantics
+                - Underscore = can't be used outside of component it's defined in (sort of like nested classes, arguably superior)
+            - Level numbers
+                - How many "layers up" of dependencies something is C(3) depends on B(2) depends on A(1), and level-1 components by definition do not depend on anything
+        - Physical design rules
+            - NO cyclic physical dependencies
+                - Cyclic physical dependency - A depends on B and B depends on A
+            - NO long-distance friendships
+                - Long-distance friendship - logic should always nest itself within (and never *leave*) the encapsulation/responsibility of the physical unit it lives within
+                - Helps reinforce logical coherency
+        - Colocating "public" classes (i.e. more than one class within a component)
+            - Friendship
+            - Cyclic dependency (try not to, though)
+            - Single solution (if construct is used nowhere else, but could easily be split off into its own component if need-be)
+            - "Flea on an Elephant" - Flea (little weeboi booger) implements an elephant (BIGBOI STOMPY STOMP)
+                - Easy to abuse. Be careful about this rationale
+        - "The Package" - second level of aggregation (bundles of components)
+            - Dependencies should only reach DOWN the hierarchy. never to the side, never back up.
+        - "Package Group"
+            - Packages that group together with their dependencies
+            - Analogy:
+                - Package group = Continent
+                - Package = Country
+                - Component = Cities/States
+        - "Package Group Hierarchy"
+            - Each package group is *distinct* and follows the same architectural logic as a package or package group
+    - Part 2: Levelization - Techniques
+        - *Levelize = make \[thing\] acyclic (i.e. model it more hierarchically)*
+        - Escalation
+            - X depends on Y, Y depends on X through mutual conversion constructors on both.
+                - This is a cyclic dependency.
+            - Solution: get rid of one of them. You can no longer construct a Y from passing an X into its constructor (but you can still construct an X by passing it a Y).
+                - This lets X depend on Y, but not the other way around, thereby *escalating* X in the hierarchical model.
+            - *BETTER* Solution: separate box and rectangle *completely* and create a conversion utility that depends on both
+            - Point: DO NOT depend on lower-level `#include`s! If there is direct use of a component/construct, include the necessary component directly
+        - Demotion
+            - Taking some of the guts out of a component and make the original component depend on the new one just created from the guts.
+        - Opaque Pointers
+            - When two components need to know about each other (like manager/employee, player/account)
+            - Solution: use one of them *in name only*
+                - Replace one of the `#include`s with a forward declaration (like `#include "thing.h"` -> `class thing;`. whichever makes the most sense to implement)
+                - Extract any information that needed to be shared between the two and put it in component A, then in component B (where there's only `class ComponentA;`), put in a pointer to component A.
+        - Dumb Data
+            - Instead of direct referencing to one another, use something like an ID system that a higher-level component sorts through (like passing pointers up, or simply having an integer ID assignment system)
+            - This is a *desparate* and *very low-level* technique.
+        - Redundancy
+            - *Tiny* amounts of code can be re-used if reusing means a huge, huge pain in the ass as far as design levelized design is concerned.
+            - But with vocabulary types (e.g. something required to be correct/consistent across the board or everything breaks), they *need* to be demoted. No redundancy allowed!
+        - Callbacks
+            - Different types of callbacks:
+                - Data - uh... (pt. 2 - 25min)
+                - Function
+                - Functor
+                - Protocol (abstract interfaces)
+                - Concept
+        - Manager Class: deciding ownership
+            - Not really a levelization technique, rather, an organizational technique
+            - List
+            - Graph
+        - Factoring
+            - Taking bits and bobs out of a single component and stringing them down a dependency line
+                - Widget transforms into Widget -> WidgetImp -> WidgetImpUtil
+                - Widget - client-facing interface
+                - WidgetImp - private methods of Widget (now public)
+                - WidgetImpUtil - static methods of Widget now in struct (now public)
+        - Escalating Encapsulation
+            - I'm fried bro
+- [OOP Is Dead, Long Live Data-oriented Design](https://www.youtube.com/watch?v=yy8jQgmhbAU) - Stoyan Nikolov @ CppCon 2018
+    - Problem: object-oriented program marries data with logic.
+        - When you grab data, the logic follows, which makes it significantly slower.
+    - Data-oriented programming: group data together by how it is used.
+    - Solutions:
+        - Separate data from logic. Structures go in one place, and functions go in another.
+        - Publicize data, open to any logic that may want/need it.
+        - Reorganize data according to how it is used.
+        - Avoid (data?) encapsulation (??)
+        - Do away with virtual calls
+        - Promote *deep domain knowledge* (**!!!!!**)
+    - Key points: (33 minutes)
+        - Keep data flat.
+            - Maximize cache usage (**look into this**)
+            - No Run-time type information (dynamically looking up stuff about types at run-time, as opposed to statically during compile-time)
+                - Essentially: avoid dynamic_cast and typeid
+                    - Exists in 'typeinfo' library. Look into performance in the rest of the lib.
+            - Amortized dynamic allocations (????? 33 minutes)
+            - Id-based handles
+                - No pointers.
+                - Allows for internal memory rearrangement
+            - Table-based output
+                - No external dependencies
+                - Makes the flow of data easier to understand
+
+## Tools
+
+- Profiling (Not repeating duplicate reccomendations)
+    - [Linux C++ profilers](https://stackoverflow.com/q/375913)
+        - Just use debugger with breakpoints and analyze the call stack.
+        - [Valgrind](http://www.valgrind.org/) (Insecure http)
+            - [Wikipedia](https://en.wikipedia.org/wiki/Valgrind)
+        - [gprof](https://sourceware.org/binutils/docs/gprof/)
+            - [Wikipedia](https://en.wikipedia.org/wiki/Gprof)
+            - [Multithreading work-around](http://sam.zoy.org/writings/programming/gprof.html) (Insecure http)
+    - [Favorite profiling tool?](https://stackoverflow.com/q/26663)
+        - [TAU - Tuning and Analysis Utilities](http://www.cs.uoregon.edu/research/tau/home.php) (Insecure http)
+        - [gperftools](https://github.com/gperftools/gperftools)
+        - [oprofile](http://oprofile.sourceforge.net/news/) (Insecure http)
+            - [Wikipedia](https://en.wikipedia.org/wiki/OProfile)
+        - [easyprofiler](https://code.google.com/archive/p/easyprofiler/)
+    - My own research
+        - [easy_profiler](https://github.com/yse/easy_profiler)
+        - [perf](https://perf.wiki.kernel.org/index.php/Main_Page) (Linux command)
+## Still need to learn
