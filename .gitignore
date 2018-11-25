@@ -1,5 +1,6 @@
 # VSCode
 .vscode/settings.json
+.vscode/c_cpp_properties.json
 
 # CMake
 CMakeCache.txt
@@ -11,6 +12,7 @@ cmake_install.cmake
 install_manifest.txt
 compile_commands.json
 CTestTestfile.cmake
+build/openmarch
 
 # CMake Visual Studio
 ALL_BUILD.vcxproj

@@ -2,11 +2,14 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Build (CMake Win32)",
+            "label": "CMake MinGW",
             "type": "shell",
             "command": "cmake",
             "args": [
-                
+                "-S ${workspaceRoot}/src",
+                "-G MinGW Makefiles",
+                "-Wdev",
+                "-Wdeprecated"
             ],
             "presentation": {
                 "echo": true,
